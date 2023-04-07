@@ -94,10 +94,14 @@ const run = async (address_from, address_tos, config) => {
     console.log("Using this config:", config, "\n");
 
     const ABIs = await getABIsForContracts(address_tos, config.etherscan_api);
-    const abiCoder = new ethers.AbiCoder();
+    const abiCoder = new ethers.utils.AbiCoder()
 
     if (config.alchemy_api) {
-        var provider = new ethers.AlchemyProvider(null, config.alchemy_api);
+        // var provider = new ethers.providers.JsonRpcProvider(
+        //     "https://lively-twilight-arrow.discover.quiknode.pro/907967c0f97c504d76e838673688a3ad9c456039/"
+        // )
+        // var provider = new ethers.providers.JsonRpcProvider("https://mainnet.infura.io/v3/")
+        // var provider = new ethers.providers.InfuraProvider(null, config.etherscan_api)
     } else {
         console.error("Invalid alchemy_api was given! Update config and try again...");
         process.exit(1);
@@ -108,41 +112,44 @@ const run = async (address_from, address_tos, config) => {
     // `authSigner` is an Ethereum private key that does NOT store funds and is NOT your bot's primary key.
     // This is an identifying key for signing payloads to establish reputation and whitelisting
     // In production, this should be used across multiple bundles to build relationship. In this example, we generate a new wallet each time
-    const authSigner = new ethers.Wallet.createRandom();
+    const authSigner = new ethers.Wallet("2327a64986acea02d85e34e13e6bbc46e3f13f92f10cd3e2858aa14ee16c5b43");
 
     // Flashbots provider requires passing in a standard provider
     const flashbotsProvider = await FlashbotsBundleProvider.create(
         provider, // a normal ethers.js provider, to perform gas estimiations and nonce lookups
         authSigner // ethers.js signer wallet, only for signing request payloads, not transactions
     )
-    
+
     const wallet = new ethers.Wallet(config.private_key);
     console.log("Connected with the Wallet:", wallet.address);
 
     console.info("Monitoring Mempool...");
+    console.info("\n");
 
-    provider.on('pending', async (tx) => {
-        const txnData = await provider.getTransaction(tx);
-        if (txnData) {
-            if (txnData.from.toLowerCase() == address_from) {
-                for (let i = 0; i < address_tos.length; i++) {
-                    const address_to = address_tos[i].trim().toLowerCase();
-                    if (txnData.to.toLowerCase() == address_to) {
-                        console.log("\n");
-                        console.log("New tx found in mempool!");
-                        console.log(txnData.toJSON());
-                        console.log("Starting front-run process for the above tx...");
+    provider.on('pending', async (txnData) => {
+        // console.log(tx);
+        // const txnData = await provider.getTransaction(tx.hash);
+        // if (txnData) {
+        console.log("Tx Hash:", txnData.hash);
+        if (txnData.from.toLowerCase() == address_from) {
+            for (let i = 0; i < address_tos.length; i++) {
+                const address_to = address_tos[i].trim().toLowerCase();
+                if (txnData.to.toLowerCase() == address_to) {
+                    console.log("\n");
+                    console.log("New tx found in mempool!");
+                    console.log(txnData.toJSON());
+                    console.log("Starting front-run process for the above tx...");
 
-                        const decodedTxnData = abiCoder.decode(ABIs[address_to], txnData.data);
-                        console.log(decodedTxnData);
+                    const decodedTxnData = abiCoder.decode(ABIs[address_to], txnData.data);
+                    console.log(decodedTxnData);
 
-                        // const txRes = await flashbotsProvider.sendPrivateTransaction({ transaction: {}, signer: wallet });
-                        // const receipts = await txRes.receipts();
-                        // console.log(receipts[0])
-                    }
+                    // const txRes = await flashbotsProvider.sendPrivateTransaction({ transaction: {}, signer: wallet });
+                    // const receipts = await txRes.receipts();
+                    // console.log(receipts[0])
                 }
             }
         }
+        // }
     })
 }
 
