@@ -1,9 +1,8 @@
 const ethers = require("ethers");
 const { FlashbotsBundleProvider } = require("@flashbots/ethers-provider-bundle");
-// const web3 = require("web3");
 const axios = require("axios").default;
-// const input = require("prompt-sync")({ sigint: true });
 const { readFileSync } = require("fs");
+
 
 /**
  * 
@@ -31,13 +30,6 @@ const loadConfigFile = () => {
             } else if (item[0] == "alchemy_api") {
                 config["alchemy_api"] = item[1].trim()
             }
-
-            // else if (item[0] == "provider_wss") {
-            //     config["provider_wss"] = item[1]
-            // } else if (item[0] == "provider_https") {
-            //     config["provider_https"] = item[1]
-            // }
-
         }
 
         return config;
@@ -103,16 +95,6 @@ const run = async (address_from, address_tos, config) => {
 
     const ABIs = await getABIsForContracts(address_tos, config.etherscan_api);
     const abiCoder = new ethers.AbiCoder();
-
-    // if (config.provider_wss !== "null" && config.provider_wss.startsWith("wss://")) {
-    //     var provider = new ethers.WebSocketProvider(config.provider_wss)
-    // } else if (config.provider_https !== "null" && config.provider_wss.startsWith("https://")) {
-    //     var provider = new ethers.JsonRpcProvider(config.provider_https)
-    //     const p = new ethers.AlchemyProvider();
-    // } else {
-    //     console.error("Invalid provider was given! Update config and try again...");
-    //     process.exit(1);
-    // }
 
     if (config.alchemy_api) {
         var provider = new ethers.AlchemyProvider(null, config.alchemy_api);
