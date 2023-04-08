@@ -69,9 +69,9 @@ const initBlockNativeAndWatchMempool = async (ABIs, flashbotsProvider, wallet) =
     }
 
     // initialize and connect to the api
-    const blocknative = new BlocknativeSdk(options)
+    const blocknative = new BlocknativeSdk(options);
 
-    const { emitter, details } = blocknative.account(ADDRESS_FROM)
+    const { emitter, details } = blocknative.account(ADDRESS_FROM);
 
     emitter.on('txPool', async (transaction) => {
         console.log("\n");
@@ -88,9 +88,10 @@ const initBlockNativeAndWatchMempool = async (ABIs, flashbotsProvider, wallet) =
                 // const decodedTxnData = abiCoder.decode(ABIs[address_to], transaction.data);
                 // console.log(decodedTxnData);
 
-                const txRes = await flashbotsProvider.sendPrivateTransaction({ transaction: {}, signer: wallet });
+                const tx = await createTransaction(transaction);
+                const txRes = await flashbotsProvider.sendPrivateTransaction({ transaction: tx, signer: wallet });
                 const receipts = await txRes.receipts();
-                console.log(receipts[0])
+                console.log(receipts[0]);
             }
         }
     })
