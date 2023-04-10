@@ -3,6 +3,7 @@ const { WebSocket } = require("ws");
 const ethers = require("ethers");
 const { FlashbotsBundleProvider } = require("@flashbots/ethers-provider-bundle");
 const BlocknativeSdk = require("bnc-sdk").default;
+// const BncTypes = require("bnc-sdk/dist/types/src/types");
 const axios = require("axios").default;
 const { readFileSync } = require("fs");
 
@@ -50,12 +51,67 @@ const getABIsForContracts = async () => {
     }
 }
 
+//*
+
+/**
+ * 
+ * @param {ethers.providers.AlchemyProvider} provider The provider to use for getting gas price
+ * @returns {Promise<string>} Highest gas price
+ */
+const getGasPrice = async (provider) => {
+    try {
+        const apiEndpoint = `https://api.etherscan.io/api?module=gastracker&action=gasoracle&apikey=${env.ETHERSCAN_API}`;
+        const headers = {
+            "accept": "*/*",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36"
+        }
+        const data = (await axios.get(apiEndpoint, { headers: headers })).data;
+
+        if (data.status == "1") {
+            return ethers.utils.parseUnits(data.result.FastGasPrice, "gwei").toString();
+        }
+
+    } catch (error) {
+        console.error(error);
+    }
+
+    return (await provider.getGasPrice()).toString();
+}
+
+/**
+ * 
+ * @param {BncTypes.TransactionData | BncTypes.TransactionEventLog} tx The full tx received from mempool
+ * @param {ethers.Wallet} wallet The address to use for sending tx
+ * @param {ethers.providers.AlchemyProvider} provider The provider to use for getting gas price
+ * @returns {object} The tx containing required params
+ */
+const createTransaction = async (tx, wallet, provider) => {
+    
+    let final_tx = {};
+
+    const gasPrice = await getGasPrice(provider);
+    const nonce = await provider.getTransactionCount(wallet.address);
+
+    final_tx["from"] = wallet.address;
+    final_tx["to"] = tx.to;
+    final_tx["nonce"] = nonce;
+    final_tx["gasLimit"] = tx.gas;
+    final_tx["gasPrice"] = parseInt(gasPrice) + 2000000000;
+    final_tx["data"] = tx.input;
+    final_tx["value"] = tx.value;
+    // final_tx["maxPriorityFeePerGas"] = tx.maxPriorityFeePerGas;
+    // final_tx["maxFeePerGas"] = tx.maxFeePerGas;
+
+    return final_tx;
+}
+
 /**
  * @param {object} ABIs The ABIs of the contracts which are in ADDRESS_TOS variable
  * @param {FlashbotsBundleProvider} flashbotsProvider The flashbots provider to use for sending txs
  * @param {ethers.Wallet} wallet The wallet to use for signing txs
+ * @param {ethers.providers.AlchemyProvider} provider The provider to use for getting gas price
  */
-const initBlockNativeAndWatchMempool = async (ABIs, flashbotsProvider, wallet) => {
+const initBlockNativeAndWatchMempool = async (ABIs, flashbotsProvider, wallet, provider) => {
     const BLOCKNATIVE_API = env.BLOCKNATIVE_API;
     const ADDRESS_FROM = env.ADDRESS_FROM.toLowerCase().trim();
     const ADDRESS_TOS = env.ADDRESS_TOS.toLowerCase().split(',');
@@ -85,10 +141,7 @@ const initBlockNativeAndWatchMempool = async (ABIs, flashbotsProvider, wallet) =
                 console.log(transaction);
                 console.log("Trying to front-run it! Sending tx through flashbots...");
                 
-                // const decodedTxnData = abiCoder.decode(ABIs[address_to], transaction.data);
-                // console.log(decodedTxnData);
-
-                const tx = await createTransaction(transaction);
+                const tx = await createTransaction(transaction, wallet, provider);
                 const txRes = await flashbotsProvider.sendPrivateTransaction({ transaction: tx, signer: wallet });
                 const receipts = await txRes.receipts();
                 console.log(receipts[0]);
@@ -129,7 +182,7 @@ const run = async () => {
     console.log("Connected with the Wallet:", wallet.address);
 
     console.info("Monitoring Mempool...");
-    await initBlockNativeAndWatchMempool(ABIs, flashbotsProvider, wallet);
+    await initBlockNativeAndWatchMempool(ABIs, flashbotsProvider, wallet, provider);
 }
 
 (async () => {
