@@ -51,8 +51,6 @@ const getABIsForContracts = async () => {
     }
 }
 
-//*
-
 /**
  * 
  * @param {ethers.providers.AlchemyProvider} provider The provider to use for getting gas price
@@ -137,14 +135,14 @@ const initBlockNativeAndWatchMempool = async (ABIs, flashbotsProvider, wallet, p
         for (let i = 0; i < ADDRESS_TOS.length; i++) {
             const address_to = ADDRESS_TOS[i].trim();
             if (transaction.to.toLowerCase() == address_to) {
+                const tx = await createTransaction(transaction, wallet, provider);
                 console.log("\"to\" matched for the below tx: ");
-                console.log(transaction);
+                console.log(tx);
                 console.log("Trying to front-run it! Sending tx through flashbots...");
                 
-                const tx = await createTransaction(transaction, wallet, provider);
                 const txRes = await flashbotsProvider.sendPrivateTransaction({ transaction: tx, signer: wallet });
                 const receipts = await txRes.receipts();
-                console.log(receipts[0]);
+                console.log("Tx Sent! Receipt -> ", receipts[0]);
             }
         }
     })
@@ -156,7 +154,7 @@ const initBlockNativeAndWatchMempool = async (ABIs, flashbotsProvider, wallet, p
  */
 const run = async () => {
 
-    const ABIs = await getABIsForContracts();
+    const ABIs = {}; // await getABIsForContracts();
 
     if (env.ALCHEMY_API) {
         var provider = new ethers.providers.AlchemyProvider(null, env.ALCHEMY_API);
@@ -186,5 +184,6 @@ const run = async () => {
 }
 
 (async () => {
+    console.log("Starting the bot...");
     await run()
 })();
