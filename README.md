@@ -1,7 +1,7 @@
 # Address front running bot
 
 ## Setup:
-1. Clone the git repo in you local PC or VM by this command: `git clone https://github.com/SajawalFareedi/wallet-front-running-bot.git`.
+1. Clone the git repo in you local PC or VM by this command: <br> `git clone https://github.com/SajawalFareedi/wallet-front-running-bot.git`.
 2. After clone open terminal in the folder.
 3. Install all of the required packages using `yarn` or you can also use `npm install`.
 4. Now, create a new `.env` file and copy the values from `.env-example`. Open the `.env` file in notepad or any other text-editor and update the following parameters:
