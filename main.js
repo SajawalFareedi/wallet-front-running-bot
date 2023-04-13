@@ -2,7 +2,7 @@ require("dotenv").config({ path: "./.env" });
 const { WebSocket } = require("ws");
 const ethers = require("ethers");
 const { FlashbotsBundleProvider } = require("@flashbots/ethers-provider-bundle");
-const BlocknativeSdk = require("bnc-sdk").default;
+const BlocknativeSdk = require("bnc-sdk");
 // const BncTypes = require("bnc-sdk/dist/types/src/types");
 const axios = require("axios").default;
 const { readFileSync } = require("fs");
@@ -81,24 +81,25 @@ const getGasPrice = async (provider) => {
  * @param {BncTypes.TransactionData | BncTypes.TransactionEventLog} tx The full tx received from mempool
  * @param {ethers.Wallet} wallet The address to use for sending tx
  * @param {ethers.providers.AlchemyProvider} provider The provider to use for getting gas price
- * @returns {object} The tx containing required params
+ * @returns {Promise<object>} The tx containing required params
  */
 const createTransaction = async (tx, wallet, provider) => {
     
     let final_tx = {};
+    const additionalFeesToAdd = 5000000000;
 
-    const gasPrice = await getGasPrice(provider);
+    // const gasPrice = await getGasPrice(provider);
     const nonce = await provider.getTransactionCount(wallet.address);
 
     final_tx["from"] = wallet.address;
     final_tx["to"] = tx.to;
     final_tx["nonce"] = nonce;
     final_tx["gasLimit"] = tx.gas;
-    final_tx["gasPrice"] = parseInt(gasPrice) + 2000000000;
+    final_tx["gasPrice"] = parseInt(tx.maxFeePerGas) + additionalFeesToAdd;
     final_tx["data"] = tx.input;
-    final_tx["value"] = tx.value;
-    // final_tx["maxPriorityFeePerGas"] = tx.maxPriorityFeePerGas;
-    // final_tx["maxFeePerGas"] = tx.maxFeePerGas;
+    tx.value !== "0" ? final_tx["value"] = ethers.BigNumber.from(tx.value) : null
+    // final_tx["maxPriorityFeePerGas"] = parseInt(tx.maxPriorityFeePerGas) + 1000000000;
+    // final_tx["maxFeePerGas"] = parseInt(tx.maxFeePerGas) + 5000000000;
 
     return final_tx;
 }
@@ -118,13 +119,12 @@ const initBlockNativeAndWatchMempool = async (ABIs, flashbotsProvider, wallet, p
     // create options object
     const options = {
         dappId: BLOCKNATIVE_API,
-        networkId: 1,
+        networkId: 5,
         ws: WebSocket
     }
 
     // initialize and connect to the api
     const blocknative = new BlocknativeSdk(options);
-
     const { emitter, details } = blocknative.account(ADDRESS_FROM);
 
     emitter.on('txPool', async (transaction) => {
@@ -140,9 +140,11 @@ const initBlockNativeAndWatchMempool = async (ABIs, flashbotsProvider, wallet, p
                 console.log(tx);
                 console.log("Trying to front-run it! Sending tx through flashbots...");
                 
-                const txRes = await flashbotsProvider.sendPrivateTransaction({ transaction: tx, signer: wallet });
-                const receipts = await txRes.receipts();
-                console.log("Tx Sent! Receipt -> ", receipts[0]);
+                const signedTx = await wallet.signTransaction(tx);
+                const txRes = await provider.sendTransaction(signedTx);
+                // const txRes = await flashbotsProvider.sendPrivateTransaction({ transaction: tx, signer: wallet });
+                console.log("Tx Sent! Receipt -> ", txRes);
+                break;
             }
         }
     })
@@ -157,7 +159,8 @@ const run = async () => {
     const ABIs = {}; // await getABIsForContracts();
 
     if (env.ALCHEMY_API) {
-        var provider = new ethers.providers.AlchemyProvider(null, env.ALCHEMY_API);
+        var provider = new ethers.providers.AlchemyProvider({ name: "goerli", chainId: 5 }, env.ALCHEMY_API);
+        // var provider = ethers.providers.getDefaultProvider('goerli');
     } else {
         console.error("Invalid alchemy_api was given! Update config and try again...");
         process.exit(1);
@@ -165,18 +168,24 @@ const run = async () => {
 
     console.info("Connected with the provider!");
 
+    const currentNetwork = await provider.getNetwork();
+    console.log("Network Config:", currentNetwork);
+
     // `authSigner` is an Ethereum private key that does NOT store funds and is NOT your bot's primary key.
     // This is an identifying key for signing payloads to establish reputation and whitelisting
     // In production, this should be used across multiple bundles to build relationship.
-    const authSigner = new ethers.Wallet("2327a64986acea02d85e34e13e6bbc46e3f13f92f10cd3e2858aa14ee16c5b43");
+    // const authSigner = new ethers.Wallet("2327a64986acea02d85e34e13e6bbc46e3f13f92f10cd3e2858aa14ee16c5b43");
+
+    const wallet = new ethers.Wallet(env.PRIVATE_KEY, provider);
 
     // Flashbots provider requires passing in a standard provider
     const flashbotsProvider = await FlashbotsBundleProvider.create(
         provider, // a normal ethers.js provider, to perform gas estimiations and nonce lookups
-        authSigner // ethers.js signer wallet, only for signing request payloads, not transactions
-    )
+        wallet, // ethers.js signer wallet, only for signing request payloads, not transactions
+        "https://relay-goerli.flashbots.net/", // "https://rpc-goerli.flashbots.net",
+        currentNetwork.name
+    );
 
-    const wallet = new ethers.Wallet(env.PRIVATE_KEY);
     console.log("Connected with the Wallet:", wallet.address);
 
     console.info("Monitoring Mempool...");
