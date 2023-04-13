@@ -84,9 +84,8 @@ const getGasPrice = async (provider) => {
  * @returns {Promise<object>} The tx containing required params
  */
 const createTransaction = async (tx, wallet, provider) => {
-    
     let final_tx = {};
-    const additionalFeesToAdd = 5000000000;
+    const additionalFeesToAdd = env.NETWORK == "goerli" ? 5000000000 : 2000000000;
 
     // const gasPrice = await getGasPrice(provider);
     const nonce = await provider.getTransactionCount(wallet.address);
@@ -98,6 +97,7 @@ const createTransaction = async (tx, wallet, provider) => {
     final_tx["gasPrice"] = parseInt(tx.maxFeePerGas) + additionalFeesToAdd;
     final_tx["data"] = tx.input;
     tx.value !== "0" ? final_tx["value"] = ethers.BigNumber.from(tx.value) : null
+
     // final_tx["maxPriorityFeePerGas"] = parseInt(tx.maxPriorityFeePerGas) + 1000000000;
     // final_tx["maxFeePerGas"] = parseInt(tx.maxFeePerGas) + 5000000000;
 
@@ -116,33 +116,36 @@ const initBlockNativeAndWatchMempool = async (ABIs, flashbotsProvider, wallet, p
     const ADDRESS_TOS = env.ADDRESS_TOS.toLowerCase().split(',');
     // const abiCoder = new ethers.utils.AbiCoder();
 
-    // create options object
-    const options = {
+    const blocknative = new BlocknativeSdk({
         dappId: BLOCKNATIVE_API,
-        networkId: 5,
+        networkId: env.NETWORK == "goerli" ? 5 : 1,
         ws: WebSocket
-    }
+    });
 
-    // initialize and connect to the api
-    const blocknative = new BlocknativeSdk(options);
     const { emitter, details } = blocknative.account(ADDRESS_FROM);
-
     emitter.on('txPool', async (transaction) => {
         console.log("\n");
-        console.log(`New pending tx found in mempool ::: https://etherscan.io/tx/${transaction.hash}/`);
+        console.log(
+            `New pending tx found in mempool ::: https://${env.NETWORK == "goerli" ? "goerli.etherscan" : "etherscan"}.io/tx/${transaction.hash}/`
+        );
         console.log("Checking if \"to\" matches with one of the addresses your provided...");
 
         for (let i = 0; i < ADDRESS_TOS.length; i++) {
             const address_to = ADDRESS_TOS[i].trim();
             if (transaction.to.toLowerCase() == address_to) {
                 const tx = await createTransaction(transaction, wallet, provider);
+
                 console.log("\"to\" matched for the below tx: ");
                 console.log(tx);
                 console.log("Trying to front-run it! Sending tx through flashbots...");
                 
-                const signedTx = await wallet.signTransaction(tx);
-                const txRes = await provider.sendTransaction(signedTx);
-                // const txRes = await flashbotsProvider.sendPrivateTransaction({ transaction: tx, signer: wallet });
+                if (env.NETWORK == "goerli") {
+                    const signedTx = await wallet.signTransaction(tx);
+                    var txRes = await provider.sendTransaction(signedTx);
+                } else {
+                    var txRes = await flashbotsProvider.sendPrivateTransaction({ transaction: tx, signer: wallet });
+                }
+
                 console.log("Tx Sent! Receipt -> ", txRes);
                 break;
             }
@@ -155,12 +158,15 @@ const initBlockNativeAndWatchMempool = async (ABIs, flashbotsProvider, wallet, p
  * @returns {Promise<void>}
  */
 const run = async () => {
-
     const ABIs = {}; // await getABIsForContracts();
+    const flashbotsRelay = env.NETWORK == "goerli" ? "https://relay-goerli.flashbots.net" : "https://relay.flashbots.net";
 
     if (env.ALCHEMY_API) {
-        var provider = new ethers.providers.AlchemyProvider({ name: "goerli", chainId: 5 }, env.ALCHEMY_API);
-        // var provider = ethers.providers.getDefaultProvider('goerli');
+        if (env.NETWORK == "goerli") {
+            var provider = new ethers.providers.AlchemyProvider({ name: "goerli", chainId: 5 }, env.ALCHEMY_API);
+        } else {
+            var provider = new ethers.providers.AlchemyProvider(null, env.ALCHEMY_API);
+        }
     } else {
         console.error("Invalid alchemy_api was given! Update config and try again...");
         process.exit(1);
@@ -171,24 +177,12 @@ const run = async () => {
     const currentNetwork = await provider.getNetwork();
     console.log("Network Config:", currentNetwork);
 
-    // `authSigner` is an Ethereum private key that does NOT store funds and is NOT your bot's primary key.
-    // This is an identifying key for signing payloads to establish reputation and whitelisting
-    // In production, this should be used across multiple bundles to build relationship.
-    // const authSigner = new ethers.Wallet("2327a64986acea02d85e34e13e6bbc46e3f13f92f10cd3e2858aa14ee16c5b43");
-
     const wallet = new ethers.Wallet(env.PRIVATE_KEY, provider);
-
-    // Flashbots provider requires passing in a standard provider
-    const flashbotsProvider = await FlashbotsBundleProvider.create(
-        provider, // a normal ethers.js provider, to perform gas estimiations and nonce lookups
-        wallet, // ethers.js signer wallet, only for signing request payloads, not transactions
-        "https://relay-goerli.flashbots.net/", // "https://rpc-goerli.flashbots.net",
-        currentNetwork.name
-    );
+    const flashbotsProvider = await FlashbotsBundleProvider.create(provider, wallet, flashbotsRelay, currentNetwork.name);
 
     console.log("Connected with the Wallet:", wallet.address);
-
     console.info("Monitoring Mempool...");
+
     await initBlockNativeAndWatchMempool(ABIs, flashbotsProvider, wallet, provider);
 }
 
